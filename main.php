@@ -1,49 +1,52 @@
 <?php
 
-// Defina os parâmetros do bot
-$bot_code = 'jjfs0ezqyec0uhts';
-$client_id = 'y6yf13au38z1rcmeznlcd891lo6k22s2';
-$bot_id = '152072';
-$dialog_id = 'chat1';
+// Log de todas as requisições para depuração
+file_put_contents("log.txt", date('Y-m-d H:i:s') . " - Entrada: " . json_encode($_REQUEST) . "\n", FILE_APPEND);
 
-// Exemplo de entrada recebida do Bitrix24
-$input = file_get_contents("php://input");
-$data = json_decode($input, true);
+// Verifica se os dados esperados foram enviados pelo Bitrix24
+if (isset($_REQUEST['BOT_ID']) && isset($_REQUEST['CLIENT_ID']) && isset($_REQUEST['DIALOG_ID']) && isset($_REQUEST['FIELDS']['TITLE'])) {
+    $botId = $_REQUEST['BOT_ID'];
+    $clientId = $_REQUEST['CLIENT_ID'];
+    $dialogId = $_REQUEST['DIALOG_ID'];
+    $title = $_REQUEST['FIELDS']['TITLE'];
 
-// Verifique se a requisição é válida e pertence ao bot correto
-if (isset($data['bot_code']) && $data['bot_code'] === $bot_code) {
+    // Aqui você pode adicionar mais validações se necessário, como verificar o botId ou clientId
 
-    // Defina o título do novo "deal" (negócio)
-    $deal_title = 'Olá! Eu sou um chatbot!';
-    
-    // Montando a URL para adicionar o novo "deal" no Bitrix24
-    $url = 'https://marketingsolucoes.bitrix24.com.br/rest/5332/37l1h62n1m3nif2e/crm.deal.add.json';
-    $url .= '?BOT_ID=' . $bot_id;
-    $url .= '&CLIENT_ID=' . $client_id;
-    $url .= '&DIALOG_ID=' . $dialog_id;
-    $url .= '&FIELDS[TITLE]=' . urlencode($deal_title);
-    
-    // Fazer a requisição para adicionar o "deal" no CRM
-    $response = file_get_contents($url);
-    
-    // Lidar com a resposta do Bitrix24
-    $response_data = json_decode($response, true);
-    
-    if (isset($response_data['result'])) {
-        // Se o "deal" foi adicionado com sucesso, responda ao usuário
-        $bot_response = 'O negócio foi criado com sucesso!';
+    // Criação de um "deal" no Bitrix24 via API
+    $url = "https://marketingsolucoes.bitrix24.com.br/rest/5332/37l1h62n1m3nif2e/crm.deal.add.json";
+    $fields = [
+        "BOT_ID" => $botId,
+        "CLIENT_ID" => $clientId,
+        "DIALOG_ID" => $dialogId,
+        "FIELDS" => [
+            "TITLE" => $title
+        ]
+    ];
+
+    // Inicializa a requisição para criar o "deal" no CRM do Bitrix24
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL, $url);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($fields));
+
+    // Recebe a resposta da API do Bitrix24
+    $response = curl_exec($ch);
+    curl_close($ch);
+
+    // Log da resposta do servidor Bitrix24 para depuração
+    file_put_contents("log.txt", date('Y-m-d H:i:s') . " - Resposta: " . $response . "\n", FILE_APPEND);
+
+    // Envia a resposta de volta para o Bitrix24
+    if ($response) {
+        echo json_encode(["status" => "success", "message" => "Deal criado com sucesso!"]);
     } else {
-        // Caso contrário, notifique sobre erro
-        $bot_response = 'Ocorreu um erro ao criar o negócio.';
+        echo json_encode(["status" => "error", "message" => "Falha ao criar o deal."]);
     }
-
-    // Retorne a resposta ao usuário do chatbot
-    header('Content-Type: application/json');
-    echo json_encode(['response' => $bot_response]);
-
 } else {
-    // Se o código do bot não for válido, rejeite a requisição
-    header('HTTP/1.1 403 Forbidden');
-    echo json_encode(['error' => 'Acesso não autorizado']);
+    // Caso algum dado esperado não tenha sido recebido
+    file_put_contents("log.txt", date('Y-m-d H:i:s') . " - Erro: Dados incompletos ou inválidos.\n", FILE_APPEND);
+    echo json_encode(["status" => "error", "message" => "Dados incompletos ou inválidos."]);
 }
+
 ?>
