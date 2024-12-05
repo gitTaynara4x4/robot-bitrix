@@ -8,6 +8,7 @@ define('DEBUG_FILE_NAME', 'bot_debug.log'); // Nome do arquivo de log
 define('CLIENT_ID', 'local.6751b2766a4e46.20773958'); // ID do aplicativo Bitrix24
 define('CLIENT_SECRET', 'kGd78loG14VQk4nO63Bulxx6KAMzGFLetibVhK0m4favTBfLqI'); // Chave do aplicativo Bitrix24
 define('WEBHOOK_URL', 'https://falasolucoes-robo.ywsa8i.easypanel.host'); // URL do seu evento
+define('BITRIX24_URL', 'https://marketingsolucoes.bitrix24.com.br/rest/35002/7a2nuej815yjx5bg/'); // URL do seu webhook do Bitrix24
 
 #####################
 
@@ -33,7 +34,7 @@ function restCommand($method, $params = array(), $auth = array())
         $auth = refreshAccessToken($auth);
     }
 
-    $queryUrl = $auth["client_endpoint"] . $method;
+    $queryUrl = BITRIX24_URL . $method;
     $queryData = http_build_query(array_merge($params, array("auth" => $auth["access_token"])));
 
     $curl = curl_init();
@@ -92,6 +93,28 @@ function registerBot()
     ), $appsConfig[CLIENT_ID]);
 
     writeToLog($result, 'Registro do Bot');
+}
+
+// Aqui começa a parte de receber as mensagens do WhatsApp e enviar para o Bitrix24
+$data = json_decode(file_get_contents("php://input"), true);
+
+// Verificar se há mensagens
+if (isset($data['messages']) && is_array($data['messages'])) {
+    foreach ($data['messages'] as $message) {
+        $from = $message['from']; // Número do cliente
+        $body = $message['text']['body']; // Texto da mensagem
+
+        // Enviar para o Bitrix24
+        $bitrixAuth = ['access_token' => 'SEU_TOKEN_DE_AUTORIZAÇÃO_DO_BITRIX']; // Defina seu token de autorização
+
+        $result = restCommand('imbot.message.add', array(
+            "DIALOG_ID" => $from, // ID do bate-papo (pode ser o número do cliente)
+            "MESSAGE" => $body,
+        ), $bitrixAuth);
+
+        // Registrar os dados no log
+        writeToLog($data, 'Mensagem Recebida do WhatsApp');
+    }
 }
 
 writeToLog($_REQUEST, 'ImBot Event Query');
