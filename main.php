@@ -1,17 +1,13 @@
 <?php
 error_reporting(0);
 
-#####################
-### CONFIG OF BOT ###
-#####################
+// Definições de configuração do bot
 define('DEBUG_FILE_NAME', 'bot_debug.log'); // Nome do arquivo de log
 define('CLIENT_ID', 'local.6751b2766a4e46.20773958'); // ID do aplicativo Bitrix24
 define('CLIENT_SECRET', 'kGd78loG14VQk4nO63Bulxx6KAMzGFLetibVhK0m4favTBfLqI'); // Chave do aplicativo Bitrix24
-define('WEBHOOK_URL', 'https://falasolucoes-robo.ywsa8i.easypanel.host'); // URL do seu evento
-define('BITRIX24_URL', 'https://marketingsolucoes.bitrix24.com.br/rest/35002/7a2nuej815yjx5bg/'); // URL do seu webhook do Bitrix24
+define('WEBHOOK_URL', 'https://falasolucoes-robo.ywsa8i.easypanel.host'); // URL do seu evento no Dialog360
 
-#####################
-
+// Função para registrar os dados no log
 function writeToLog($data, $title = '')
 {
     $log = "\n------------------------\n";
@@ -23,6 +19,7 @@ function writeToLog($data, $title = '')
     return true;
 }
 
+// Função para fazer a chamada à API do Bitrix24
 function restCommand($method, $params = array(), $auth = array())
 {
     if (!isset($auth["access_token"])) {
@@ -34,9 +31,10 @@ function restCommand($method, $params = array(), $auth = array())
         $auth = refreshAccessToken($auth);
     }
 
-    $queryUrl = BITRIX24_URL . $method;
+    $queryUrl = $auth["client_endpoint"] . $method;
     $queryData = http_build_query(array_merge($params, array("auth" => $auth["access_token"])));
 
+    // Inicializa o CURL para enviar dados à API do Bitrix24
     $curl = curl_init();
     curl_setopt_array($curl, array(
         CURLOPT_RETURNTRANSFER => 1,
@@ -50,6 +48,7 @@ function restCommand($method, $params = array(), $auth = array())
     return json_decode($result, true);
 }
 
+// Função para atualizar o token de acesso
 function refreshAccessToken($auth)
 {
     $queryUrl = "https://oauth.bitrix.info/oauth/token/";
@@ -80,6 +79,7 @@ function refreshAccessToken($auth)
     }
 }
 
+// Função para registrar o bot
 function registerBot()
 {
     global $appsConfig;
@@ -95,77 +95,25 @@ function registerBot()
     writeToLog($result, 'Registro do Bot');
 }
 
-// Aqui começa a parte de receber as mensagens do WhatsApp e enviar para o Bitrix24
-$data = json_decode(file_get_contents("php://input"), true);
-
-// Verificar se há mensagens
-if (isset($data['messages']) && is_array($data['messages'])) {
-    foreach ($data['messages'] as $message) {
-        $from = $message['from']; // Número do cliente
-        $body = $message['text']['body']; // Texto da mensagem
-
-        // Enviar para o Bitrix24
-        $bitrixAuth = ['access_token' => 'SEU_TOKEN_DE_AUTORIZAÇÃO_DO_BITRIX']; // Defina seu token de autorização
-
-        $result = restCommand('imbot.message.add', array(
-            "DIALOG_ID" => $from, // ID do bate-papo (pode ser o número do cliente)
-            "MESSAGE" => $body,
-        ), $bitrixAuth);
-
-        // Registrar os dados no log
-        writeToLog($data, 'Mensagem Recebida do WhatsApp');
-    }
-}
-
 writeToLog($_REQUEST, 'ImBot Event Query');
 
-$appsConfig = array();
-if (file_exists(__DIR__ . '/config.php')) {
-    include(__DIR__ . '/config.php');
-}
-
-// Registra o bot ao inicializar (caso ainda não esteja registrado)
-if ($_REQUEST['event'] == 'ONAPPINSTALL') {
-    registerBot();
-}
-
-// Recebe o evento "nova mensagem para o bot"
+// Recebe a mensagem do webhook do Dialog360
 if ($_REQUEST['event'] == 'ONIMBOTMESSAGEADD') {
-    if (!isset($appsConfig[$_REQUEST['auth']['application_token']])) {
-        return false;
-    }
+    $message = $_REQUEST['data']['PARAMS']['MESSAGE'];  // Mensagem recebida
+    $dialogId = $_REQUEST['data']['PARAMS']['DIALOG_ID']; // ID do diálogo
 
-    $latency = (time() - $_REQUEST['ts']);
-    $latency = $latency > 60 ? (round($latency / 60)) . 'm' : $latency . "s";
+    // Exemplo de enviar a mensagem para o Bitrix24
+    $bitrixAuth = ['access_token' => 'SEU_TOKEN_DE_AUTORIZAÇÃO_DO_BITRIX']; // Substitua pelo token correto
 
-    if ($_REQUEST['data']['PARAMS']['CHAT_ENTITY_TYPE'] == 'LINES') {
-        list($message) = explode(" ", $_REQUEST['data']['PARAMS']['MESSAGE']);
-        if ($message == '1') {
-            $result = restCommand('imbot.message.add', array(
-                "DIALOG_ID" => $_REQUEST['data']['PARAMS']['DIALOG_ID'],
-                "MESSAGE" => 'Olá, sou o EchoBot! Eu posso repetir mensagens e enviar menus nos canais abertos!',
-            ), $_REQUEST["auth"]);
-        } elseif ($message == '0') {
-            $result = restCommand('imbot.message.add', array(
-                "DIALOG_ID" => $_REQUEST['data']['PARAMS']['DIALOG_ID'],
-                "MESSAGE" => 'Aguarde uma resposta!',
-            ), $_REQUEST["auth"]);
-        }
-    } else {
-        $result = restCommand('imbot.message.add', array(
-            "DIALOG_ID" => $_REQUEST['data']['PARAMS']['DIALOG_ID'],
-            "MESSAGE" => "Mensagem do bot",
-            "ATTACH" => array(
-                array("MESSAGE" => "Resposta: " . $_REQUEST['data']['PARAMS']['MESSAGE']),
-                array("MESSAGE" => "Latência: " . $latency)
-            )
-        ), $_REQUEST["auth"]);
-    }
+    $result = restCommand('imbot.message.add', array(
+        "DIALOG_ID" => $dialogId, // ID do bate-papo
+        "MESSAGE" => $message, // Mensagem
+    ), $bitrixAuth);
 
-    writeToLog($result, 'ImBot Event Message Add');
+    writeToLog($result, 'Mensagem Recebida do WhatsApp');
 }
 
-// Recebe o evento "novo comando para o bot"
+// Lida com comandos recebidos no bot
 if ($_REQUEST['event'] == 'ONIMCOMMANDADD') {
     if (!isset($appsConfig[$_REQUEST['auth']['application_token']])) {
         return false;
@@ -188,7 +136,7 @@ if ($_REQUEST['event'] == 'ONIMCOMMANDADD') {
     writeToLog($result, 'ImBot Command Add');
 }
 
-// Recebe o evento "abrir diálogo privado com o bot" ou "adicionar bot ao grupo"
+// Recebe evento de "entrar em chat privado com o bot" ou "adicionar o bot ao grupo"
 if ($_REQUEST['event'] == 'ONIMBOTJOINCHAT') {
     if (!isset($appsConfig[$_REQUEST['auth']['application_token']])) {
         return false;
@@ -201,4 +149,5 @@ if ($_REQUEST['event'] == 'ONIMBOTJOINCHAT') {
 
     writeToLog($result, 'ImBot Join Chat');
 }
+
 ?>
