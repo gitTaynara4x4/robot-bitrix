@@ -4,9 +4,11 @@ error_reporting(0);
 #####################
 ### CONFIG OF BOT ###
 #####################
-define('DEBUG_FILE_NAME', ''); // Nome do arquivo de log (se necessário)
+define('DEBUG_FILE_NAME', 'bot_debug.log'); // Nome do arquivo de log
 define('CLIENT_ID', 'local.6751b2766a4e46.20773958'); // ID do aplicativo Bitrix24
 define('CLIENT_SECRET', 'kGd78loG14VQk4nO63Bulxx6KAMzGFLetibVhK0m4favTBfLqI'); // Chave do aplicativo Bitrix24
+define('WEBHOOK_URL', 'https://falasolucoes-robo.ywsa8i.easypanel.host'); // URL do seu evento
+
 #####################
 
 function writeToLog($data, $title = '')
@@ -20,8 +22,17 @@ function writeToLog($data, $title = '')
     return true;
 }
 
-function restCommand($method, $params = array(), $auth = array(), $authRefresh = false)
+function restCommand($method, $params = array(), $auth = array())
 {
+    if (!isset($auth["access_token"])) {
+        return false;
+    }
+
+    // Atualiza o token caso esteja expirado
+    if (isset($auth['expires_in']) && time() > $auth['expires_in']) {
+        $auth = refreshAccessToken($auth);
+    }
+
     $queryUrl = $auth["client_endpoint"] . $method;
     $queryData = http_build_query(array_merge($params, array("auth" => $auth["access_token"])));
 
@@ -38,6 +49,51 @@ function restCommand($method, $params = array(), $auth = array(), $authRefresh =
     return json_decode($result, true);
 }
 
+function refreshAccessToken($auth)
+{
+    $queryUrl = "https://oauth.bitrix.info/oauth/token/";
+    $queryData = http_build_query(array(
+        "grant_type" => "refresh_token",
+        "client_id" => CLIENT_ID,
+        "client_secret" => CLIENT_SECRET,
+        "refresh_token" => $auth["refresh_token"],
+    ));
+
+    $curl = curl_init();
+    curl_setopt_array($curl, array(
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_URL => $queryUrl,
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => $queryData,
+    ));
+    $result = curl_exec($curl);
+    curl_close($curl);
+
+    $newAuth = json_decode($result, true);
+    if (isset($newAuth['access_token'])) {
+        writeToLog($newAuth, 'Token Atualizado');
+        return $newAuth;
+    } else {
+        writeToLog($newAuth, 'Erro ao Atualizar Token');
+        return $auth;
+    }
+}
+
+function registerBot()
+{
+    global $appsConfig;
+
+    $result = restCommand('imbot.register', array(
+        'CODE' => 'MeuBot',
+        'TYPE' => 'B',
+        'EVENT_MESSAGE_ADD' => WEBHOOK_URL,
+        'EVENT_WELCOME_MESSAGE' => WEBHOOK_URL,
+        'OPENLINE' => 'Y',
+    ), $appsConfig[CLIENT_ID]);
+
+    writeToLog($result, 'Registro do Bot');
+}
+
 writeToLog($_REQUEST, 'ImBot Event Query');
 
 $appsConfig = array();
@@ -45,7 +101,12 @@ if (file_exists(__DIR__ . '/config.php')) {
     include(__DIR__ . '/config.php');
 }
 
-// receive event "new message for bot"
+// Registra o bot ao inicializar (caso ainda não esteja registrado)
+if ($_REQUEST['event'] == 'ONAPPINSTALL') {
+    registerBot();
+}
+
+// Recebe o evento "nova mensagem para o bot"
 if ($_REQUEST['event'] == 'ONIMBOTMESSAGEADD') {
     if (!isset($appsConfig[$_REQUEST['auth']['application_token']])) {
         return false;
@@ -81,7 +142,7 @@ if ($_REQUEST['event'] == 'ONIMBOTMESSAGEADD') {
     writeToLog($result, 'ImBot Event Message Add');
 }
 
-// receive event "new command for bot"
+// Recebe o evento "novo comando para o bot"
 if ($_REQUEST['event'] == 'ONIMCOMMANDADD') {
     if (!isset($appsConfig[$_REQUEST['auth']['application_token']])) {
         return false;
@@ -104,7 +165,7 @@ if ($_REQUEST['event'] == 'ONIMCOMMANDADD') {
     writeToLog($result, 'ImBot Command Add');
 }
 
-// receive event "open private dialog with bot" or "join bot to group chat"
+// Recebe o evento "abrir diálogo privado com o bot" ou "adicionar bot ao grupo"
 if ($_REQUEST['event'] == 'ONIMBOTJOINCHAT') {
     if (!isset($appsConfig[$_REQUEST['auth']['application_token']])) {
         return false;
